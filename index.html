@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sales Pipeline — Humaine Labs</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+      --border: #30363d; --text: #e6edf3; --text-dim: #c9d1d9; --text-muted: #8b949e;
+      --blue: #388bfd; --blue-dim: #1f6feb;
+      --hot-color: #f97316; --hot-bg: rgba(249,115,22,0.15);
+      --warm-color: #eab308; --warm-bg: rgba(234,179,8,0.15);
+      --cold-color: #60a5fa; --cold-bg: rgba(96,165,250,0.12);
+      --won-color: #22c55e;  --won-bg: rgba(34,197,94,0.12);
+      --lost-color: #6b7280; --lost-bg: rgba(107,114,128,0.12);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+    /* ── AUTH SCREEN ── */
+    #authScreen { position: fixed; inset: 0; background: var(--bg); z-index: 9000; display: flex; align-items: center; justify-content: center; }
+    .auth-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 36px; width: 400px; max-width: 95vw; }
+    .auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+    .auth-brand h1 { font-size: 16px; font-weight: 600; }
+    .auth-brand small { font-size: 12px; color: var(--text-muted); display: block; }
+    .auth-tabs { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 22px; }
+    .auth-tab { flex: 1; padding: 9px; font-size: 13px; font-weight: 500; cursor: pointer; background: none; border: none; color: var(--text-muted); font-family: inherit; transition: all 0.15s; }
+    .auth-tab.active { background: var(--blue-dim); color: #fff; }
+    .auth-err { background: var(--hot-bg); color: var(--hot-color); border: 1px solid rgba(249,115,22,0.3); border-radius: 7px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; display: none; }
+    .auth-err.show { display: block; }
+    .auth-info { background: rgba(56,139,253,0.1); color: var(--blue); border: 1px solid rgba(56,139,253,0.25); border-radius: 7px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; display: none; }
+    .auth-info.show { display: block; }
+
+    /* ── HEADER ── */
+    header { position: sticky; top: 0; z-index: 200; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 0 28px; height: 60px; }
+    .logo { width: 36px; height: 36px; border-radius: 8px; background: var(--blue-dim); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .brand { flex: 1; }
+    .brand h1 { font-size: 15px; font-weight: 600; line-height: 1.2; }
+    .brand small { font-size: 12px; color: var(--text-muted); }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .who-select { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; padding: 7px 28px 7px 12px; font-size: 13px; cursor: pointer; min-width: 155px; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+    .who-select:focus { outline: none; border-color: var(--blue); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text); transition: background 0.15s; font-family: inherit; }
+    .btn:hover { background: var(--surface2); }
+    .btn-primary { background: var(--blue-dim); border-color: var(--blue-dim); color: #fff; }
+    .btn-primary:hover { background: var(--blue); border-color: var(--blue); }
+    .user-pill { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+    .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--blue-dim); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .badge-admin { background: rgba(234,179,8,0.15); color: var(--warm-color); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── MAIN ── */
+    main { padding: 28px 28px 60px; max-width: 1400px; margin: 0 auto; }
+    section { margin-bottom: 32px; }
+    .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 14px; }
+
+    /* ── KPI CARDS ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .kpi-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--text-muted); text-transform: uppercase; }
+    .kpi-icon { font-size: 18px; }
+    .kpi-value { font-size: 28px; font-weight: 600; line-height: 1; margin-bottom: 6px; }
+    .kpi-sub { font-size: 12px; color: var(--text-muted); }
+
+    /* ── PIPELINE ── */
+    .pipeline-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; }
+    .pipeline-months { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+    .pm-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .pm-name { font-weight: 600; font-size: 14px; }
+    .pm-count { font-size: 12px; color: var(--text-muted); }
+    .bar-track { height: 6px; background: var(--surface2); border-radius: 3px; margin-bottom: 10px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.5s ease; }
+    .pm-value { font-size: 16px; font-weight: 600; color: var(--blue); }
+
+    /* ── TABLE ── */
+    .leads-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .filter-group { display: flex; gap: 8px; align-items: center; }
+    .filter-select { background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim); border-radius: 7px; padding: 6px 24px 6px 10px; font-size: 13px; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; min-width: 120px; }
+    .filter-select:focus { outline: none; border-color: var(--blue); }
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { padding: 12px 16px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+    thead th:hover { color: var(--text); }
+    thead th.sorted { color: var(--blue); }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; cursor: pointer; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    td { padding: 14px 16px; font-size: 13px; vertical-align: middle; }
+    .contact-name { font-weight: 500; }
+    .contact-co { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+    .badge-hot  { background: var(--hot-bg);  color: var(--hot-color); }
+    .badge-warm { background: var(--warm-bg); color: var(--warm-color); }
+    .badge-cold { background: var(--cold-bg); color: var(--cold-color); }
+    .badge-won  { background: var(--won-bg);  color: var(--won-color); }
+    .badge-lost { background: var(--lost-bg); color: var(--lost-color); }
+    .rev-cell { color: var(--blue); font-weight: 500; }
+    .rem-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+    .del-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 14px; }
+    .del-btn:hover { background: var(--surface2); color: var(--hot-color); }
+    .no-data { text-align: center; padding: 48px; color: var(--text-muted); }
+
+    /* ── MODAL ── */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+    .overlay.open { opacity: 1; pointer-events: all; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+    .modal-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-hdr h2 { font-size: 16px; font-weight: 600; }
+    .modal-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; border-radius: 4px; padding: 2px 7px; line-height: 1; }
+    .modal-x:hover { background: var(--surface2); color: var(--text); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .fg { display: flex; flex-direction: column; gap: 6px; }
+    .fg.full { grid-column: 1 / -1; }
+    .fg label { font-size: 12px; font-weight: 500; color: var(--text-dim); }
+    .fi, .fs, .fta { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 7px; padding: 8px 12px; font-size: 13px; font-family: inherit; width: 100%; }
+    .fi:focus, .fs:focus, .fta:focus { outline: none; border-color: var(--blue); }
+    .fi:disabled { opacity: 0.6; cursor: not-allowed; }
+    .fs { appearance: none; cursor: pointer; }
+    .fta { resize: vertical; min-height: 68px; }
+    .modal-ftr { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .owner-display { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; font-size: 13px; color: var(--text-muted); }
+
+    /* ── LOADING SPINNER ── */
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 8999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+    .loading-overlay span { color: var(--text-muted); font-size: 13px; }
+
+    /* ── TOAST ── */
+    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--won-color); border-radius: 8px; padding: 12px 18px; font-size: 13px; z-index: 9999; transform: translateY(80px); opacity: 0; transition: all 0.3s; pointer-events: none; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 768px) { main { padding: 16px; } .kpi-grid { grid-template-columns: 1fr 1fr; } .pipeline-months { grid-template-columns: 1fr; } header { padding: 0 16px; } .header-actions { gap: 6px; } }
+  </style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loadingScreen">
+  <div class="spinner"></div>
+  <span>Loading…</span>
+</div>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="logo">HL</div>
+      <div><h1>Sales Pipeline</h1><small>Humaine Labs</small></div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tabSignup" onclick="switchTab('signup')">Create Account</button>
+    </div>
+    <div id="authErr" class="auth-err"></div>
+    <div id="authInfo" class="auth-info"></div>
+    <!-- Login -->
+    <div id="loginForm">
+      <div class="fg" style="margin-bottom:14px">
+        <label>Email</label>
+        <input class="fi" id="lEmail" type="email" placeholder="you@company.com" onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <div class="fg" style="margin-bottom:20px">
+        <label>Password</label>
+        <input class="fi" id="lPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" id="loginBtn" onclick="doLogin()">Sign In →</button>
+    </div>
+    <!-- Signup -->
+    <div id="signupForm" style="display:none">
+      <div class="fg" style="margin-bottom:14px">
+        <label>Full Name</label>
+        <input class="fi" id="sName" placeholder="Your name (shown as owner)" />
+      </div>
+      <div class="fg" style="margin-bottom:14px">
+        <label>Email</label>
+        <input class="fi" id="sEmail" type="email" placeholder="you@company.com" />
+      </div>
+      <div class="fg" style="margin-bottom:20px">
+        <label>Password (min 6 characters)</label>
+        <input class="fi" id="sPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doSignup()" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" id="signupBtn" onclick="doSignup()">Create Account →</button>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="app" hidden>
+  <header>
+    <div class="logo">HL</div>
+    <div class="brand"><h1>Sales Pipeline</h1><small>Humaine Labs</small></div>
+    <div class="header-actions">
+      <select class="who-select" id="ownerFilter" onchange="handleOwnerFilter()" style="display:none">
+        <option value="">👥 All Owners</option>
+      </select>
+      <div class="user-pill">
+        <div class="user-avatar" id="userAvatar">?</div>
+        <span id="userName">…</span>
+        <span class="badge-admin" id="adminBadge" style="display:none">Admin</span>
+      </div>
+      <label class="btn" style="cursor:pointer">📄 Import Excel<input type="file" id="xlFile" accept=".xlsx,.xls,.csv" hidden onchange="importExcel(event)" /></label>
+      <button class="btn btn-primary" onclick="openAdd()">＋ Add Lead</button>
+      <button class="btn" onclick="doLogout()" title="Sign out" style="padding:7px 10px">⎋</button>
+    </div>
+  </header>
+  <main>
+    <section>
+      <div class="section-label" id="fLabel">THIS MONTH FORECAST — MAR 2026</div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Revenue Forecast</span><span class="kpi-icon" style="color:var(--blue)">₹</span></div><div class="kpi-value" id="kRevF">₹0</div><div class="kpi-sub" id="kRevFSub">0 leads expected</div></div>
+        <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Closed This Month</span><span class="kpi-icon" style="color:var(--won-color)">✓</span></div><div class="kpi-value" id="kClosed">₹0</div><div class="kpi-sub" id="kClosedSub">0 deals won</div></div>
+        <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Hot Leads</span><span class="kpi-icon">🔥</span></div><div class="kpi-value" id="kHot">0</div><div class="kpi-sub">Ready to close</div></div>
+        <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Warm Leads</span><span class="kpi-icon">🌡️</span></div><div class="kpi-value" id="kWarm">0</div><div class="kpi-sub">In active nurture</div></div>
+        <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Open Pipeline</span><span class="kpi-icon" style="color:var(--blue)">📈</span></div><div class="kpi-value" id="kPipe">₹0</div><div class="kpi-sub" id="kPipeSub">0 active leads</div></div>
+      </div>
+    </section>
+    <section>
+      <div class="section-label">NEXT 3 MONTHS PIPELINE</div>
+      <div class="pipeline-card"><div class="pipeline-months" id="pipeMonths"></div></div>
+    </section>
+    <section>
+      <div class="leads-header">
+        <div class="section-label" style="margin:0">ALL LEADS</div>
+        <div class="filter-group">
+          <span style="color:var(--text-muted)">⚗️</span>
+          <select class="filter-select" id="fStatus" onchange="renderTable()">
+            <option value="">All Status</option>
+            <option>Hot</option><option>Warm</option><option>Cold</option><option>Won</option><option>Lost</option>
+          </select>
+          <select class="filter-select" id="fOwnerF" onchange="renderTable()" style="display:none">
+            <option value="">All Owners</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortBy('contact')">CONTACT <span id="s-contact">↕</span></th>
+              <th onclick="sortBy('status')">STATUS <span id="s-status">↕</span></th>
+              <th onclick="sortBy('service')">SERVICE TYPE <span id="s-service">↕</span></th>
+              <th onclick="sortBy('closure')">CLOSURE <span id="s-closure">↕</span></th>
+              <th onclick="sortBy('revenue')">REVENUE <span id="s-revenue">↕</span></th>
+              <th onclick="sortBy('owner')">OWNER <span id="s-owner">↕</span></th>
+              <th>REMARKS</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-hdr"><h2 id="modalTitle">Add Lead</h2><button class="modal-x" onclick="closeModal()">✕</button></div>
+    <div class="form-grid">
+      <div class="fg"><label>Contact Name *</label><input class="fi" id="mContact" placeholder="e.g. Rajesh Kumar" /></div>
+      <div class="fg"><label>Company *</label><input class="fi" id="mCompany" placeholder="e.g. Tata Group" /></div>
+      <div class="fg">
+        <label>Status *</label>
+        <select class="fs" id="mStatus">
+          <option value="Hot">🔥 Hot</option><option value="Warm">🌡️ Warm</option>
+          <option value="Cold">❄️ Cold</option><option value="Won">✅ Won</option><option value="Lost">❌ Lost</option>
+        </select>
+      </div>
+      <div class="fg" id="ownerFieldWrap">
+        <label>Owner</label>
+        <!-- admin sees select, member sees read-only display -->
+        <select class="fs" id="mOwnerSelect" style="display:none"></select>
+        <div class="owner-display" id="mOwnerDisplay"></div>
+      </div>
+      <div class="fg"><label>Service Type *</label><input class="fi" id="mService" placeholder="e.g. Leadership AI Series" /></div>
+      <div class="fg"><label>Expected Closure *</label><input class="fi" id="mClosure" type="month" /></div>
+      <div class="fg"><label>Revenue (₹) *</label><input class="fi" id="mRevenue" type="number" placeholder="e.g. 500000" /></div>
+      <div class="fg full"><label>Remarks</label><textarea class="fta" id="mRemarks" placeholder="Notes about this lead…"></textarea></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveLead()">Save Lead</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+//  ⚠️  FILL IN YOUR SUPABASE CREDENTIALS BELOW
+// ══════════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://apasytegqbwunduceflr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwYXN5dGVncWJ3dW5kdWNlZmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3MDEyOTksImV4cCI6MjA5MDI3NzI5OX0.iiKp3q5qATc0nfvtO0nL2yz41tmbw3iHcTskWnrrM1w';
+// ══════════════════════════════════════════════════════════════════
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let session = null, profile = null, isAdmin = false;
+let leads = [], profiles = [];
+let sortField = 'created_at', sortDir = -1, editId = null, ownerFilter = '';
+
+// ── UTILS ──────────────────────────────────────────────────────────
+function fmtRev(n) {
+  if (!n) return '₹0';
+  if (n >= 10000000) return '₹' + (n/10000000).toFixed(1) + 'Cr';
+  if (n >= 100000)   return '₹' + (n/100000).toFixed(1) + 'L';
+  if (n >= 1000)     return '₹' + (n/1000).toFixed(0) + 'K';
+  return '₹' + n;
+}
+function fmtMon(ym) {
+  if (!ym) return '';
+  const [y,m] = ym.split('-');
+  return MONTHS[parseInt(m)-1] + ' ' + y;
+}
+function curYM() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+function nextMonths(n) {
+  const r = [], d = new Date();
+  d.setDate(1); d.setMonth(d.getMonth()+1);
+  for (let i=0; i<n; i++, d.setMonth(d.getMonth()+1))
+    r.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  return r;
+}
+function toast(msg, color='var(--won-color)') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.borderLeftColor = color;
+  t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2800);
+}
+function initials(name) {
+  return (name||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+}
+function showEl(id) { const e=document.getElementById(id); if(e) e.style.display=''; }
+function hideEl(id) { const e=document.getElementById(id); if(e) e.style.display='none'; }
+
+// ── AUTH SCREEN ────────────────────────────────────────────────────
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabSignup').classList.toggle('active', !isLogin);
+  document.getElementById('loginForm').style.display = isLogin ? '' : 'none';
+  document.getElementById('signupForm').style.display = isLogin ? 'none' : '';
+  document.getElementById('authErr').classList.remove('show');
+  document.getElementById('authInfo').classList.remove('show');
+}
+function authErr(msg) {
+  const el = document.getElementById('authErr');
+  el.textContent = msg; el.classList.add('show');
+  document.getElementById('authInfo').classList.remove('show');
+}
+function authInfo(msg) {
+  const el = document.getElementById('authInfo');
+  el.textContent = msg; el.classList.add('show');
+  document.getElementById('authErr').classList.remove('show');
+}
+function setBtnLoading(id, loading, text) {
+  const btn = document.getElementById(id);
+  btn.disabled = loading;
+  btn.innerHTML = loading ? '<div class="spinner" style="width:16px;height:16px;border-width:2px"></div>' : text;
+}
+
+async function doLogin() {
+  const email = document.getElementById('lEmail').value.trim();
+  const pass  = document.getElementById('lPass').value;
+  if (!email || !pass) { authErr('Please enter email and password.'); return; }
+  setBtnLoading('loginBtn', true, 'Sign In →');
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  setBtnLoading('loginBtn', false, 'Sign In →');
+  if (error) authErr(error.message);
+}
+
+async function doSignup() {
+  const name  = document.getElementById('sName').value.trim();
+  const email = document.getElementById('sEmail').value.trim();
+  const pass  = document.getElementById('sPass').value;
+  if (!name || !email || !pass) { authErr('Please fill in all fields.'); return; }
+  if (pass.length < 6) { authErr('Password must be at least 6 characters.'); return; }
+  setBtnLoading('signupBtn', true, 'Create Account →');
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  setBtnLoading('signupBtn', false, 'Create Account →');
+  if (error) { authErr(error.message); return; }
+  if (data.user) {
+    // Check if this is the first user — make them admin
+    const { count } = await sb.from('profiles').select('*', { count: 'exact', head: true });
+    const role = count === 0 ? 'admin' : 'member';
+    await sb.from('profiles').insert({ id: data.user.id, full_name: name, role });
+  }
+  authInfo('Account created! You can now sign in.');
+  switchTab('login');
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+}
+
+// ── LOAD DATA ──────────────────────────────────────────────────────
+async function loadLeads() {
+  const { data, error } = await sb.from('leads').select('*').order('created_at', { ascending: false });
+  if (error) { console.error('Load leads:', error); return; }
+  leads = data || [];
+  renderAll();
+}
+
+async function loadProfiles() {
+  const { data } = await sb.from('profiles').select('*').order('full_name');
+  profiles = data || [];
+}
+
+// ── REAL-TIME ──────────────────────────────────────────────────────
+function setupRealtime() {
+  sb.channel('leads-sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => loadLeads())
+    .subscribe();
+}
+
+// ── SESSION HANDLER ────────────────────────────────────────────────
+async function onAuthenticated(s) {
+  session = s;
+  hideEl('loadingScreen');
+  hideEl('authScreen');
+
+  // Load profile
+  const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
+  profile = prof;
+  isAdmin = profile?.role === 'admin';
+
+  await loadProfiles();
+  await loadLeads();
+  setupRealtime();
+
+  // Update header
+  document.getElementById('userName').textContent = profile?.full_name || s.user.email;
+  document.getElementById('userAvatar').textContent = initials(profile?.full_name || s.user.email);
+  document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
+
+  // Admin-only: show owner filter in header + table
+  if (isAdmin) {
+    document.getElementById('ownerFilter').style.display = '';
+    document.getElementById('fOwnerF').style.display = '';
+    refreshOwnerDropdowns();
+  }
+
+  document.getElementById('app').hidden = false;
+}
+
+function onUnauthenticated() {
+  session = null; profile = null; isAdmin = false;
+  leads = []; profiles = [];
+  document.getElementById('app').hidden = true;
+  hideEl('loadingScreen');
+  document.getElementById('authScreen').style.display = 'flex';
+}
+
+// ── OWNER DROPDOWNS ────────────────────────────────────────────────
+function refreshOwnerDropdowns() {
+  if (!isAdmin) return;
+  const names = profiles.map(p => p.full_name);
+  // Header filter
+  const hf = document.getElementById('ownerFilter');
+  const hv = hf.value;
+  hf.innerHTML = '<option value="">👥 All Owners</option>';
+  names.forEach(n => hf.innerHTML += `<option${hv===n?' selected':''}>${n}</option>`);
+  // Table filter
+  const tf = document.getElementById('fOwnerF');
+  const tv = tf.value;
+  tf.innerHTML = '<option value="">All Owners</option>';
+  names.forEach(n => tf.innerHTML += `<option${tv===n?' selected':''}>${n}</option>`);
+  // Modal owner select
+  const ms = document.getElementById('mOwnerSelect');
+  const mv = ms.value;
+  ms.innerHTML = '';
+  profiles.forEach(p => ms.innerHTML += `<option value="${p.id}" data-name="${p.full_name}"${mv===p.id?' selected':''}>${p.full_name}</option>`);
+}
+
+function handleOwnerFilter() {
+  ownerFilter = document.getElementById('ownerFilter').value;
+  renderAll();
+}
+
+// ── FILTERED DATA ──────────────────────────────────────────────────
+function getFilteredLeads() {
+  let data = [...leads];
+  if (ownerFilter) data = data.filter(l => l.owner === ownerFilter);
+  const sf = document.getElementById('fStatus').value;
+  const of = isAdmin ? document.getElementById('fOwnerF').value : '';
+  if (sf) data = data.filter(l => l.status === sf);
+  if (of) data = data.filter(l => l.owner === of);
+  return data;
+}
+
+// ── KPIs ───────────────────────────────────────────────────────────
+function renderKPIs() {
+  const data = getFilteredLeads(), ym = curYM();
+  document.getElementById('fLabel').textContent = 'THIS MONTH FORECAST — ' + fmtMon(ym).toUpperCase();
+  const tm   = data.filter(l => l.closure === ym);
+  const fore = tm.filter(l => l.status !== 'Won' && l.status !== 'Lost');
+  const won  = tm.filter(l => l.status === 'Won');
+  document.getElementById('kRevF').textContent    = fmtRev(fore.reduce((s,l)=>s+l.revenue,0));
+  document.getElementById('kRevFSub').textContent  = fore.length + ' lead' + (fore.length!==1?'s':'') + ' expected';
+  document.getElementById('kClosed').textContent   = fmtRev(won.reduce((s,l)=>s+l.revenue,0));
+  document.getElementById('kClosedSub').textContent = won.length + ' deal' + (won.length!==1?'s':'') + ' won';
+  const act = data.filter(l => l.status !== 'Won' && l.status !== 'Lost');
+  document.getElementById('kHot').textContent   = act.filter(l=>l.status==='Hot').length;
+  document.getElementById('kWarm').textContent  = act.filter(l=>l.status==='Warm').length;
+  document.getElementById('kPipe').textContent  = fmtRev(act.reduce((s,l)=>s+l.revenue,0));
+  document.getElementById('kPipeSub').textContent = act.length + ' active lead' + (act.length!==1?'s':'');
+}
+
+// ── PIPELINE ───────────────────────────────────────────────────────
+function renderPipeline() {
+  const data = getFilteredLeads().filter(l => l.status !== 'Won' && l.status !== 'Lost');
+  const months = nextMonths(3);
+  const md = months.map(ym => {
+    const ml = data.filter(l => l.closure === ym);
+    return { ym, count: ml.length, rev: ml.reduce((s,l)=>s+l.revenue,0) };
+  });
+  const maxR = Math.max(...md.map(m=>m.rev), 1);
+  document.getElementById('pipeMonths').innerHTML = md.map(m => `
+    <div>
+      <div class="pm-label"><span class="pm-name">${fmtMon(m.ym)}</span><span class="pm-count">${m.count} lead${m.count!==1?'s':''}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(m.rev/maxR*100).toFixed(1)}%"></div></div>
+      <div class="pm-value">${fmtRev(m.rev)}</div>
+    </div>`).join('');
+}
+
+// ── TABLE ──────────────────────────────────────────────────────────
+const ICONS = {Hot:'🔥',Warm:'🌡️',Cold:'❄️',Won:'✅',Lost:'❌'};
+function renderTable() {
+  let data = getFilteredLeads();
+  if (sortField) {
+    data.sort((a,b) => {
+      let av = a[sortField], bv = b[sortField];
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+  }
+  const tb = document.getElementById('tbody');
+  if (!data.length) { tb.innerHTML = `<tr><td colspan="8"><div class="no-data">No leads found</div></td></tr>`; return; }
+  tb.innerHTML = data.map(l => `
+    <tr onclick="openEdit('${l.id}')">
+      <td><div class="contact-name">${l.contact}</div><div class="contact-co">${l.company||''}</div></td>
+      <td><span class="badge badge-${(l.status||'').toLowerCase()}">${ICONS[l.status]||''} ${l.status}</span></td>
+      <td>${l.service||''}</td>
+      <td>${fmtMon(l.closure)}</td>
+      <td class="rev-cell">${fmtRev(l.revenue)}</td>
+      <td>${l.owner||''}</td>
+      <td class="rem-cell" title="${l.remarks||''}">${l.remarks||''}</td>
+      <td>${canEdit(l) ? `<button class="del-btn" onclick="delLead(event,'${l.id}')" title="Delete">🗑</button>` : ''}</td>
+    </tr>`).join('');
+}
+
+function canEdit(lead) {
+  return isAdmin || (session && lead.owner_id === session.user.id);
+}
+
+function sortBy(f) {
+  if (sortField===f) sortDir*=-1; else { sortField=f; sortDir=1; }
+  ['contact','status','service','closure','revenue','owner'].forEach(k => {
+    const el = document.getElementById('s-'+k);
+    if (el) el.textContent = k===f ? (sortDir===1?' ↑':' ↓') : ' ↕';
+  });
+  renderTable();
+}
+
+function renderAll() { renderKPIs(); renderPipeline(); renderTable(); }
+
+// ── ADD / EDIT ─────────────────────────────────────────────────────
+function openAdd() {
+  editId = null;
+  document.getElementById('modalTitle').textContent = 'Add Lead';
+  document.getElementById('mContact').value = '';
+  document.getElementById('mCompany').value = '';
+  document.getElementById('mStatus').value  = 'Hot';
+  document.getElementById('mService').value  = '';
+  document.getElementById('mClosure').value  = nextMonths(1)[0];
+  document.getElementById('mRevenue').value  = '';
+  document.getElementById('mRemarks').value  = '';
+  setupOwnerField(null);
+  document.getElementById('modal').classList.add('open');
+  setTimeout(() => document.getElementById('mContact').focus(), 100);
+}
+
+function openEdit(id) {
+  const l = leads.find(x => x.id === id);
+  if (!l || !canEdit(l)) { toast('You can only edit your own leads','var(--warm-color)'); return; }
+  editId = id;
+  document.getElementById('modalTitle').textContent = 'Edit Lead';
+  document.getElementById('mContact').value = l.contact;
+  document.getElementById('mCompany').value = l.company || '';
+  document.getElementById('mStatus').value  = l.status;
+  document.getElementById('mService').value  = l.service || '';
+  document.getElementById('mClosure').value  = l.closure;
+  document.getElementById('mRevenue').value  = l.revenue || '';
+  document.getElementById('mRemarks').value  = l.remarks || '';
+  setupOwnerField(l);
+  document.getElementById('modal').classList.add('open');
+}
+
+function setupOwnerField(lead) {
+  const sel = document.getElementById('mOwnerSelect');
+  const disp = document.getElementById('mOwnerDisplay');
+  if (isAdmin) {
+    // Admin: show dropdown of all profiles
+    sel.style.display = ''; disp.style.display = 'none';
+    sel.innerHTML = '';
+    profiles.forEach(p => sel.innerHTML += `<option value="${p.id}" data-name="${p.full_name}">${p.full_name}</option>`);
+    if (lead) sel.value = lead.owner_id || '';
+    else if (session) sel.value = session.user.id;
+  } else {
+    // Member: read-only, always their own name
+    sel.style.display = 'none'; disp.style.display = '';
+    disp.textContent = profile?.full_name || '';
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open'); editId = null;
+}
+
+async function saveLead() {
+  const contact = document.getElementById('mContact').value.trim();
+  const company = document.getElementById('mCompany').value.trim();
+  const status  = document.getElementById('mStatus').value;
+  const service = document.getElementById('mService').value.trim();
+  const closure = document.getElementById('mClosure').value;
+  const revenue = parseInt(document.getElementById('mRevenue').value) || 0;
+  const remarks = document.getElementById('mRemarks').value.trim();
+
+  if (!contact || !company || !service || !closure) {
+    toast('Fill in all required fields', 'var(--hot-color)'); return;
+  }
+
+  let ownerId, ownerName;
+  if (isAdmin) {
+    const sel = document.getElementById('mOwnerSelect');
+    ownerId   = sel.value;
+    ownerName = sel.options[sel.selectedIndex]?.dataset.name || '';
+  } else {
+    ownerId   = session.user.id;
+    ownerName = profile?.full_name || '';
+  }
+
+  const payload = { contact, company, status, service, closure, revenue, remarks, owner: ownerName, owner_id: ownerId };
+  setBtnLoading('saveBtn', true, 'Save Lead');
+
+  let error;
+  if (editId) {
+    ({ error } = await sb.from('leads').update(payload).eq('id', editId));
+    if (!error) toast('Lead updated ✓');
+  } else {
+    ({ error } = await sb.from('leads').insert(payload));
+    if (!error) toast('Lead added ✓');
+  }
+
+  setBtnLoading('saveBtn', false, 'Save Lead');
+  if (error) { toast('Error: ' + error.message, 'var(--hot-color)'); return; }
+  closeModal();
+  await loadLeads();
+}
+
+async function delLead(e, id) {
+  e.stopPropagation();
+  const lead = leads.find(l => l.id === id);
+  if (!lead || !canEdit(lead)) { toast('Not authorized', 'var(--hot-color)'); return; }
+  if (!confirm('Delete this lead?')) return;
+  const { error } = await sb.from('leads').delete().eq('id', id);
+  if (error) { toast('Error: ' + error.message, 'var(--hot-color)'); return; }
+  toast('Lead deleted', 'var(--hot-color)');
+  await loadLeads();
+}
+
+// ── EXCEL IMPORT ───────────────────────────────────────────────────
+function importExcel(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    try {
+      const wb   = XLSX.read(ev.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      if (rows.length < 2) { toast('No data found', 'var(--hot-color)'); return; }
+      const hdrs = rows[0].map(h => String(h||'').toLowerCase().trim());
+      const ci = {
+        contact: hdrs.findIndex(h=>h.includes('contact')||h.includes('name')),
+        company: hdrs.findIndex(h=>h.includes('company')||h.includes('account')),
+        status:  hdrs.findIndex(h=>h.includes('status')),
+        service: hdrs.findIndex(h=>h.includes('service')||h.includes('product')||h.includes('type')),
+        closure: hdrs.findIndex(h=>h.includes('closure')||h.includes('close')||h.includes('date')),
+        revenue: hdrs.findIndex(h=>h.includes('revenue')||h.includes('value')||h.includes('amount')),
+        remarks: hdrs.findIndex(h=>h.includes('remark')||h.includes('note')),
+      };
+      const toInsert = [];
+      rows.slice(1).forEach(row => {
+        const contact = ci.contact>=0 && row[ci.contact] ? String(row[ci.contact]) : '';
+        if (!contact) return;
+        const company = ci.company>=0 && row[ci.company] ? String(row[ci.company]) : '';
+        const status  = ci.status>=0  && row[ci.status]  ? String(row[ci.status])  : 'Warm';
+        const service = ci.service>=0 && row[ci.service] ? String(row[ci.service]) : '';
+        let closure = '';
+        const rd = ci.closure>=0 ? row[ci.closure] : null;
+        if (rd) {
+          if (typeof rd==='number') { const d=XLSX.SSF.parse_date_code(rd); closure=d.y+'-'+String(d.m).padStart(2,'0'); }
+          else {
+            const s = String(rd);
+            if (/^\d{4}-\d{2}/.test(s)) closure = s.substring(0,7);
+            else { const mo=MONTHS.findIndex(m=>s.toLowerCase().includes(m.toLowerCase())); const yr=s.match(/\d{4}/); if(mo>=0&&yr) closure=yr[0]+'-'+String(mo+1).padStart(2,'0'); }
+          }
+        }
+        if (!closure) closure = nextMonths(1)[0];
+        const revenue = ci.revenue>=0 && row[ci.revenue] ? parseInt(String(row[ci.revenue]).replace(/[^\d]/g,''))||0 : 0;
+        const remarks = ci.remarks>=0 && row[ci.remarks] ? String(row[ci.remarks]) : '';
+        toInsert.push({ contact, company, status, service, closure, revenue, remarks, owner: profile?.full_name||'', owner_id: session.user.id });
+      });
+      if (!toInsert.length) { toast('No valid rows found', 'var(--hot-color)'); return; }
+      const { error } = await sb.from('leads').insert(toInsert);
+      if (error) { toast('Import error: '+error.message, 'var(--hot-color)'); return; }
+      toast(`Imported ${toInsert.length} lead${toInsert.length!==1?'s':''} ✓`);
+      await loadLeads();
+    } catch(err) { toast('Error: '+err.message, 'var(--hot-color)'); }
+  };
+  reader.readAsArrayBuffer(file); e.target.value='';
+}
+
+// ── INIT ───────────────────────────────────────────────────────────
+sb.auth.onAuthStateChange(async (event, s) => {
+  if (s) { await onAuthenticated(s); }
+  else    { onUnauthenticated(); }
+});
+
+// Check existing session on page load
+(async () => {
+  const { data } = await sb.auth.getSession();
+  if (data.session) { await onAuthenticated(data.session); }
+  else { onUnauthenticated(); }
+})();
+</script>
+</body>
+</html>
