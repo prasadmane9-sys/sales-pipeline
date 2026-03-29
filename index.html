@@ -424,56 +424,51 @@ function setupRealtime() {
     .subscribe();
 }
 
+// ── SCREEN HELPER ──────────────────────────────────────────────────
+function showScreen(name) {
+  document.getElementById('authScreen').style.display    = name === 'auth'    ? 'flex' : 'none';
+  document.getElementById('loadingScreen').style.display = name === 'loading' ? 'flex' : 'none';
+  document.getElementById('app').hidden                  = name !== 'app';
+}
+
 // ── SESSION HANDLER ────────────────────────────────────────────────
-let authHandled = false; // prevent double-call from onAuthStateChange + getSession
+let loading = false;
 
 async function onAuthenticated(s) {
-  if (authHandled && session && session.user.id === s.user.id) return;
-  authHandled = true;
+  if (loading) return;   // already loading, ignore duplicate calls
+  loading = true;
   session = s;
-
-  // Show spinner while loading data, hide login
-  document.getElementById('authScreen').style.display   = 'none';
-  document.getElementById('loadingScreen').style.display = 'flex';
+  showScreen('loading');
 
   try {
-    // Load profile
     const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
     profile = prof;
     isAdmin = profile?.role === 'admin';
-
     await loadProfiles();
     await loadLeads();
     setupRealtime();
-
-    // Update header
-    document.getElementById('userName').textContent      = profile?.full_name || s.user.email;
-    document.getElementById('userAvatar').textContent    = initials(profile?.full_name || s.user.email);
-    document.getElementById('adminBadge').style.display  = isAdmin ? '' : 'none';
-
-    // Admin-only filters
+    document.getElementById('userName').textContent     = profile?.full_name || s.user.email;
+    document.getElementById('userAvatar').textContent   = initials(profile?.full_name || s.user.email);
+    document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
     if (isAdmin) {
       document.getElementById('ownerFilter').style.display = '';
       document.getElementById('fOwnerF').style.display     = '';
       refreshOwnerDropdowns();
     }
-
-    document.getElementById('loadingScreen').style.display = 'none';
-    document.getElementById('app').hidden = false;
+    showScreen('app');
   } catch(err) {
-    console.error('Dashboard load error:', err);
-    // If anything fails, fall back to login screen
-    onUnauthenticated();
+    console.error(err);
+    showScreen('auth');
+  } finally {
+    loading = false;
   }
 }
 
 function onUnauthenticated() {
-  authHandled = false;
+  loading = false;
   session = null; profile = null; isAdmin = false;
   leads = []; profiles = [];
-  document.getElementById('app').hidden = true;
-  document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('authScreen').style.display    = 'flex';
+  showScreen('auth');
 }
 
 // ── OWNER DROPDOWNS ────────────────────────────────────────────────
@@ -747,10 +742,24 @@ function importExcel(e) {
 }
 
 // ── INIT ───────────────────────────────────────────────────────────
-// onAuthStateChange handles everything — fires on load with existing session or null
+// Step 1: check if already logged in (e.g. returning user)
+// Auth screen is visible by default from HTML — no flash, no blank screen
+(async () => {
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data.session) {
+      await onAuthenticated(data.session);
+    }
+    // No session → auth screen already visible, nothing to do
+  } catch(e) {
+    // Supabase error → auth screen stays visible
+  }
+})();
+
+// Step 2: handle future sign-in / sign-out events
 sb.auth.onAuthStateChange(async (event, s) => {
-  if (s) await onAuthenticated(s);
-  else   onUnauthenticated();
+  if (event === 'SIGNED_IN')  await onAuthenticated(s);
+  if (event === 'SIGNED_OUT') onUnauthenticated();
 });
 </script>
 </body>
