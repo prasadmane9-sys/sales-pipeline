@@ -434,9 +434,18 @@ function showScreen(name) {
   document.getElementById('app').hidden                  = name !== 'app';
 }
 
-async function forceLogout() {
-  await sb.auth.signOut();
+// Clear session from localStorage directly — no network call needed
+function forceLogout() {
+  // Wipe Supabase token from localStorage without any network request
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('sb-'))
+    .forEach(k => localStorage.removeItem(k));
+  loading = false;
+  session = null; profile = null; isAdmin = false;
+  leads = []; profiles = [];
   showScreen('auth');
+  // Also tell server (fire & forget, don't await)
+  sb.auth.signOut().catch(() => {});
 }
 
 // ── SESSION HANDLER ────────────────────────────────────────────────
@@ -448,12 +457,11 @@ async function onAuthenticated(s) {
   session = s;
   showScreen('loading');
 
-  // Auto-escape: if loading takes more than 8 seconds, sign out & show login
-  const timeout = setTimeout(async () => {
-    console.warn('Load timeout — clearing session');
-    await forceLogout();
-    loading = false;
-  }, 8000);
+  // Auto-escape after 6s — clears localStorage, no network needed
+  const timeout = setTimeout(() => {
+    console.warn('Load timed out — resetting to login');
+    forceLogout();
+  }, 6000);
 
   try {
     const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
@@ -475,7 +483,7 @@ async function onAuthenticated(s) {
   } catch(err) {
     clearTimeout(timeout);
     console.error(err);
-    await forceLogout();
+    forceLogout();
   } finally {
     loading = false;
   }
