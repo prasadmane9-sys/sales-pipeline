@@ -425,41 +425,55 @@ function setupRealtime() {
 }
 
 // ── SESSION HANDLER ────────────────────────────────────────────────
+let authHandled = false; // prevent double-call from onAuthStateChange + getSession
+
 async function onAuthenticated(s) {
+  if (authHandled && session && session.user.id === s.user.id) return;
+  authHandled = true;
   session = s;
-  hideEl('loadingScreen');
-  hideEl('authScreen');
 
-  // Load profile
-  const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
-  profile = prof;
-  isAdmin = profile?.role === 'admin';
+  // Show spinner while loading data, hide login
+  document.getElementById('authScreen').style.display   = 'none';
+  document.getElementById('loadingScreen').style.display = 'flex';
 
-  await loadProfiles();
-  await loadLeads();
-  setupRealtime();
+  try {
+    // Load profile
+    const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
+    profile = prof;
+    isAdmin = profile?.role === 'admin';
 
-  // Update header
-  document.getElementById('userName').textContent = profile?.full_name || s.user.email;
-  document.getElementById('userAvatar').textContent = initials(profile?.full_name || s.user.email);
-  document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
+    await loadProfiles();
+    await loadLeads();
+    setupRealtime();
 
-  // Admin-only: show owner filter in header + table
-  if (isAdmin) {
-    document.getElementById('ownerFilter').style.display = '';
-    document.getElementById('fOwnerF').style.display = '';
-    refreshOwnerDropdowns();
+    // Update header
+    document.getElementById('userName').textContent      = profile?.full_name || s.user.email;
+    document.getElementById('userAvatar').textContent    = initials(profile?.full_name || s.user.email);
+    document.getElementById('adminBadge').style.display  = isAdmin ? '' : 'none';
+
+    // Admin-only filters
+    if (isAdmin) {
+      document.getElementById('ownerFilter').style.display = '';
+      document.getElementById('fOwnerF').style.display     = '';
+      refreshOwnerDropdowns();
+    }
+
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('app').hidden = false;
+  } catch(err) {
+    console.error('Dashboard load error:', err);
+    // If anything fails, fall back to login screen
+    onUnauthenticated();
   }
-
-  document.getElementById('app').hidden = false;
 }
 
 function onUnauthenticated() {
+  authHandled = false;
   session = null; profile = null; isAdmin = false;
   leads = []; profiles = [];
   document.getElementById('app').hidden = true;
   document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('authScreen').style.display    = 'flex';
 }
 
 // ── OWNER DROPDOWNS ────────────────────────────────────────────────
@@ -733,28 +747,11 @@ function importExcel(e) {
 }
 
 // ── INIT ───────────────────────────────────────────────────────────
+// onAuthStateChange handles everything — fires on load with existing session or null
 sb.auth.onAuthStateChange(async (event, s) => {
-  if (s) { await onAuthenticated(s); }
-  else    { onUnauthenticated(); }
+  if (s) await onAuthenticated(s);
+  else   onUnauthenticated();
 });
-
-// Check existing session — auth screen already visible, so no blank screen
-// If already logged in, we'll transition to dashboard; otherwise stay on auth
-(async () => {
-  try {
-    const { data } = await sb.auth.getSession();
-    if (data.session) {
-      // Was already logged in — show brief loading then dashboard
-      document.getElementById('loadingScreen').style.display = 'flex';
-      document.getElementById('authScreen').style.display   = 'none';
-      await onAuthenticated(data.session);
-    }
-    // else: auth screen is already visible, nothing to do
-  } catch(e) {
-    // Supabase failed to respond — auth screen stays visible
-    console.error('Session check failed:', e);
-  }
-})();
 </script>
 </body>
 </html>
