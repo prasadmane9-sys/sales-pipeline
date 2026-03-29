@@ -141,6 +141,9 @@
 <div class="loading-overlay" id="loadingScreen" style="display:none">
   <div class="spinner"></div>
   <span>Loading…</span>
+  <button onclick="forceLogout()" style="margin-top:20px;background:none;border:1px solid #444;color:#8b949e;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px">
+    Taking too long? Back to Login
+  </button>
 </div>
 
 <!-- AUTH SCREEN (shown immediately by default) -->
@@ -431,14 +434,26 @@ function showScreen(name) {
   document.getElementById('app').hidden                  = name !== 'app';
 }
 
+async function forceLogout() {
+  await sb.auth.signOut();
+  showScreen('auth');
+}
+
 // ── SESSION HANDLER ────────────────────────────────────────────────
 let loading = false;
 
 async function onAuthenticated(s) {
-  if (loading) return;   // already loading, ignore duplicate calls
+  if (loading) return;
   loading = true;
   session = s;
   showScreen('loading');
+
+  // Auto-escape: if loading takes more than 8 seconds, sign out & show login
+  const timeout = setTimeout(async () => {
+    console.warn('Load timeout — clearing session');
+    await forceLogout();
+    loading = false;
+  }, 8000);
 
   try {
     const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
@@ -447,6 +462,7 @@ async function onAuthenticated(s) {
     await loadProfiles();
     await loadLeads();
     setupRealtime();
+    clearTimeout(timeout);
     document.getElementById('userName').textContent     = profile?.full_name || s.user.email;
     document.getElementById('userAvatar').textContent   = initials(profile?.full_name || s.user.email);
     document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
@@ -457,8 +473,9 @@ async function onAuthenticated(s) {
     }
     showScreen('app');
   } catch(err) {
+    clearTimeout(timeout);
     console.error(err);
-    showScreen('auth');
+    await forceLogout();
   } finally {
     loading = false;
   }
