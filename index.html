@@ -139,14 +139,14 @@
 </head>
 <body>
 
-<!-- LOADING -->
-<div class="loading-overlay" id="loadingScreen">
+<!-- LOADING (only shown when transitioning after login) -->
+<div class="loading-overlay" id="loadingScreen" style="display:none">
   <div class="spinner"></div>
   <span>Loading…</span>
 </div>
 
-<!-- AUTH SCREEN -->
-<div id="authScreen" style="display:none">
+<!-- AUTH SCREEN (shown immediately by default) -->
+<div id="authScreen">
   <div class="auth-card">
     <div class="auth-brand">
       <div class="logo">HL</div>
@@ -457,7 +457,7 @@ function onUnauthenticated() {
   session = null; profile = null; isAdmin = false;
   leads = []; profiles = [];
   document.getElementById('app').hidden = true;
-  hideEl('loadingScreen');
+  document.getElementById('loadingScreen').style.display = 'none';
   document.getElementById('authScreen').style.display = 'flex';
 }
 
@@ -737,11 +737,22 @@ sb.auth.onAuthStateChange(async (event, s) => {
   else    { onUnauthenticated(); }
 });
 
-// Check existing session on page load
+// Check existing session — auth screen already visible, so no blank screen
+// If already logged in, we'll transition to dashboard; otherwise stay on auth
 (async () => {
-  const { data } = await sb.auth.getSession();
-  if (data.session) { await onAuthenticated(data.session); }
-  else { onUnauthenticated(); }
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data.session) {
+      // Was already logged in — show brief loading then dashboard
+      document.getElementById('loadingScreen').style.display = 'flex';
+      document.getElementById('authScreen').style.display   = 'none';
+      await onAuthenticated(data.session);
+    }
+    // else: auth screen is already visible, nothing to do
+  } catch(e) {
+    // Supabase failed to respond — auth screen stays visible
+    console.error('Session check failed:', e);
+  }
 })();
 </script>
 </body>
