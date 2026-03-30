@@ -766,25 +766,19 @@ function importExcel(e) {
 }
 
 // ── INIT ───────────────────────────────────────────────────────────
-// Step 1: check if already logged in (e.g. returning user)
-// Auth screen is visible by default from HTML — no flash, no blank screen
-(async () => {
-  try {
-    const { data } = await sb.auth.getSession();
-    if (data.session) {
-      await onAuthenticated(data.session);
-    }
-    // No session → auth screen already visible, nothing to do
-  } catch(e) {
-    // Supabase error → auth screen stays visible
-  }
-})();
-
-// Step 2: handle future auth events
+// Single source of truth — onAuthStateChange handles EVERYTHING
+// INITIAL_SESSION fires on every page load (tab switch, refresh, first visit)
 sb.auth.onAuthStateChange(async (event, s) => {
-  if (event === 'SIGNED_IN')       await onAuthenticated(s);
-  if (event === 'SIGNED_OUT')      onUnauthenticated();
-  if (event === 'TOKEN_REFRESHED') session = s; // silently update token, no reload
+  if (event === 'INITIAL_SESSION') {
+    if (s) await onAuthenticated(s);
+    // else: no session → auth screen already visible from HTML, nothing to do
+  } else if (event === 'SIGNED_IN') {
+    await onAuthenticated(s);
+  } else if (event === 'SIGNED_OUT') {
+    onUnauthenticated();
+  } else if (event === 'TOKEN_REFRESHED') {
+    session = s; // silently update token without reloading UI
+  }
 });
 </script>
 </body>
