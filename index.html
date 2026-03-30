@@ -457,36 +457,35 @@ async function onAuthenticated(s) {
   session = s;
   showScreen('loading');
 
-  // Auto-escape after 6s — clears localStorage, no network needed
-  const timeout = setTimeout(() => {
-    console.warn('Load timed out — resetting to login');
-    forceLogout();
-  }, 6000);
-
+  // Load profile — fall back to email if it fails (never kick to login)
   try {
     const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
     profile = prof;
     isAdmin = profile?.role === 'admin';
-    await loadProfiles();
-    await loadLeads();
-    setupRealtime();
-    clearTimeout(timeout);
-    document.getElementById('userName').textContent     = profile?.full_name || s.user.email;
-    document.getElementById('userAvatar').textContent   = initials(profile?.full_name || s.user.email);
-    document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
-    if (isAdmin) {
-      document.getElementById('ownerFilter').style.display = '';
-      document.getElementById('fOwnerF').style.display     = '';
-      refreshOwnerDropdowns();
-    }
-    showScreen('app');
-  } catch(err) {
-    clearTimeout(timeout);
-    console.error(err);
-    forceLogout();
-  } finally {
-    loading = false;
+  } catch(e) {
+    profile = { full_name: s.user.email, role: 'member' };
+    isAdmin = false;
   }
+
+  // Load data — if it fails, show empty dashboard (do NOT wipe session)
+  try {
+    await Promise.all([loadProfiles(), loadLeads()]);
+  } catch(e) {
+    console.warn('Data load failed — showing empty dashboard', e);
+  }
+
+  // Always show the app when session is valid
+  document.getElementById('userName').textContent     = profile?.full_name || s.user.email;
+  document.getElementById('userAvatar').textContent   = initials(profile?.full_name || s.user.email);
+  document.getElementById('adminBadge').style.display = isAdmin ? '' : 'none';
+  if (isAdmin) {
+    document.getElementById('ownerFilter').style.display = '';
+    document.getElementById('fOwnerF').style.display     = '';
+    refreshOwnerDropdowns();
+  }
+  setupRealtime();
+  loading = false;
+  showScreen('app');
 }
 
 function onUnauthenticated() {
@@ -781,10 +780,11 @@ function importExcel(e) {
   }
 })();
 
-// Step 2: handle future sign-in / sign-out events
+// Step 2: handle future auth events
 sb.auth.onAuthStateChange(async (event, s) => {
-  if (event === 'SIGNED_IN')  await onAuthenticated(s);
-  if (event === 'SIGNED_OUT') onUnauthenticated();
+  if (event === 'SIGNED_IN')       await onAuthenticated(s);
+  if (event === 'SIGNED_OUT')      onUnauthenticated();
+  if (event === 'TOKEN_REFRESHED') session = s; // silently update token, no reload
 });
 </script>
 </body>
