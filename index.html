@@ -170,6 +170,36 @@
         <input class="fi" id="lPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" />
       </div>
       <button class="btn btn-primary" style="width:100%;justify-content:center" id="loginBtn" onclick="doLogin()">Sign In →</button>
+      <p style="text-align:center;margin-top:14px;font-size:12px;color:var(--text-muted)">
+        <a href="#" onclick="showForgotPassword()" style="color:var(--blue);text-decoration:none">Forgot password?</a>
+      </p>
+    </div>
+
+    <!-- Forgot Password -->
+    <div id="forgotForm" style="display:none">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Enter your email and we'll send a reset link.</p>
+      <div class="fg" style="margin-bottom:16px">
+        <label>Email</label>
+        <input class="fi" id="fEmail" type="email" placeholder="you@company.com" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" id="forgotBtn" onclick="doForgotPassword()">Send Reset Link →</button>
+      <p style="text-align:center;margin-top:12px;font-size:12px">
+        <a href="#" onclick="showForgotPassword(false)" style="color:var(--blue);text-decoration:none">← Back to Sign In</a>
+      </p>
+    </div>
+
+    <!-- Set New Password (shown after clicking reset link) -->
+    <div id="resetForm" style="display:none">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Choose a new password for your account.</p>
+      <div class="fg" style="margin-bottom:14px">
+        <label>New Password</label>
+        <input class="fi" id="rPass" type="password" placeholder="Min 6 characters" />
+      </div>
+      <div class="fg" style="margin-bottom:20px">
+        <label>Confirm Password</label>
+        <input class="fi" id="rPass2" type="password" placeholder="Repeat password" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" id="resetBtn" onclick="doResetPassword()">Set New Password →</button>
     </div>
     <!-- Signup -->
     <div id="signupForm" style="display:none">
@@ -206,6 +236,7 @@
       </div>
       <label class="btn" style="cursor:pointer">📄 Import Excel<input type="file" id="xlFile" accept=".xlsx,.xls,.csv" hidden onchange="importExcel(event)" /></label>
       <button class="btn btn-primary" onclick="openAdd()">＋ Add Lead</button>
+      <button class="btn" onclick="openChangePassword()" title="Change password" style="padding:7px 10px">🔑</button>
       <button class="btn" onclick="doLogout()" title="Sign out" style="padding:7px 10px">⎋</button>
     </div>
   </header>
@@ -287,6 +318,25 @@
     <div class="modal-ftr">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="saveBtn" onclick="saveLead()">Save Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div class="overlay" id="pwModal" onclick="if(event.target===this)closePwModal()">
+  <div class="modal" style="width:380px">
+    <div class="modal-hdr"><h2>Change Password</h2><button class="modal-x" onclick="closePwModal()">✕</button></div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>New Password</label>
+      <input class="fi" id="pwNew" type="password" placeholder="Min 6 characters" />
+    </div>
+    <div class="fg" style="margin-bottom:20px">
+      <label>Confirm Password</label>
+      <input class="fi" id="pwNew2" type="password" placeholder="Repeat new password" onkeydown="if(event.key==='Enter')doChangePassword()" />
+    </div>
+    <div class="modal-ftr">
+      <button class="btn" onclick="closePwModal()">Cancel</button>
+      <button class="btn btn-primary" id="pwBtn" onclick="doChangePassword()">Update Password</button>
     </div>
   </div>
 </div>
@@ -405,6 +455,46 @@ async function doSignup() {
 
 async function doLogout() {
   await sb.auth.signOut();
+}
+
+// ── FORGOT / RESET PASSWORD ────────────────────────────────────────
+function showForgotPassword(show=true) {
+  document.getElementById('loginForm').style.display   = show ? 'none' : '';
+  document.getElementById('forgotForm').style.display  = show ? '' : 'none';
+  document.getElementById('authErr').classList.remove('show');
+  document.getElementById('authInfo').classList.remove('show');
+}
+async function doForgotPassword() {
+  const email = document.getElementById('fEmail').value.trim();
+  if (!email) { authErr('Please enter your email.'); return; }
+  setBtnLoading('forgotBtn', true, 'Send Reset Link →');
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://prasadmane9-sys.github.io/sales-pipeline'
+  });
+  setBtnLoading('forgotBtn', false, 'Send Reset Link →');
+  if (error) { authErr(error.message); return; }
+  authInfo('Reset link sent! Check your email.');
+}
+
+// ── CHANGE PASSWORD (logged in) ────────────────────────────────────
+function openChangePassword() {
+  document.getElementById('pwNew').value  = '';
+  document.getElementById('pwNew2').value = '';
+  document.getElementById('pwModal').classList.add('open');
+  setTimeout(() => document.getElementById('pwNew').focus(), 100);
+}
+function closePwModal() { document.getElementById('pwModal').classList.remove('open'); }
+async function doChangePassword() {
+  const p1 = document.getElementById('pwNew').value;
+  const p2 = document.getElementById('pwNew2').value;
+  if (!p1 || p1.length < 6) { toast('Password must be at least 6 characters', 'var(--hot-color)'); return; }
+  if (p1 !== p2) { toast('Passwords do not match', 'var(--hot-color)'); return; }
+  setBtnLoading('pwBtn', true, 'Update Password');
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  setBtnLoading('pwBtn', false, 'Update Password');
+  if (error) { toast('Error: ' + error.message, 'var(--hot-color)'); return; }
+  closePwModal();
+  toast('Password updated successfully ✓');
 }
 
 // ── LOAD DATA ──────────────────────────────────────────────────────
@@ -785,9 +875,31 @@ sb.auth.onAuthStateChange(async (event, s) => {
   } else if (event === 'SIGNED_OUT') {
     onUnauthenticated();
   } else if (event === 'TOKEN_REFRESHED') {
-    session = s; // silently update token without reloading UI
+    session = s;
+  } else if (event === 'PASSWORD_RECOVERY') {
+    // User clicked reset link in email — show set-new-password form
+    showScreen('auth');
+    document.getElementById('loginForm').style.display  = 'none';
+    document.getElementById('forgotForm').style.display = 'none';
+    document.getElementById('resetForm').style.display  = '';
+    document.getElementById('authInfo').textContent = 'Enter your new password below.';
+    document.getElementById('authInfo').classList.add('show');
   }
 });
+
+// ── SET NEW PASSWORD (from reset link) ────────────────────────────
+async function doResetPassword() {
+  const p1 = document.getElementById('rPass').value;
+  const p2 = document.getElementById('rPass2').value;
+  if (!p1 || p1.length < 6) { authErr('Password must be at least 6 characters.'); return; }
+  if (p1 !== p2) { authErr('Passwords do not match.'); return; }
+  setBtnLoading('resetBtn', true, 'Set New Password →');
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  setBtnLoading('resetBtn', false, 'Set New Password →');
+  if (error) { authErr(error.message); return; }
+  authInfo('Password updated! Signing you in…');
+  setTimeout(() => location.reload(), 1500);
+}
 </script>
 </body>
 </html>
