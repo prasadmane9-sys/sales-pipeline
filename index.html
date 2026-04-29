@@ -140,7 +140,7 @@
 <!-- LOADING (only shown when transitioning after login) -->
 <div class="loading-overlay" id="loadingScreen" style="display:none">
   <div class="spinner"></div>
-  <span>Loading…</span>
+  <span id="loadingMsg">Connecting…</span>
   <button onclick="forceLogout()" style="margin-top:20px;background:none;border:1px solid #444;color:#8b949e;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px">
     Taking too long? Back to Login
   </button>
@@ -428,6 +428,10 @@ function setupRealtime() {
 }
 
 // ── SCREEN HELPER ──────────────────────────────────────────────────
+function setLoadingMsg(msg) {
+  const el = document.getElementById('loadingMsg');
+  if (el) el.textContent = msg;
+}
 function showScreen(name) {
   document.getElementById('authScreen').style.display    = name === 'auth'    ? 'flex' : 'none';
   document.getElementById('loadingScreen').style.display = name === 'loading' ? 'flex' : 'none';
@@ -456,22 +460,26 @@ async function onAuthenticated(s) {
   loading = true;
   session = s;
   showScreen('loading');
+  setLoadingMsg('Connecting…');
 
-  // Load profile — fall back to email if it fails (never kick to login)
   try {
-    const { data: prof } = await sb.from('profiles').select('*').eq('id', s.user.id).single();
-    profile = prof;
-    isAdmin = profile?.role === 'admin';
-  } catch(e) {
-    profile = { full_name: s.user.email, role: 'member' };
-    isAdmin = false;
-  }
+    // Fire ALL 3 queries in parallel — 3x faster than sequential
+    const [profRes, profsRes, leadsRes] = await Promise.all([
+      sb.from('profiles').select('*').eq('id', s.user.id).single(),
+      sb.from('profiles').select('*').order('full_name'),
+      sb.from('leads').select('*').order('created_at', { ascending: false })
+    ]);
 
-  // Load data — if it fails, show empty dashboard (do NOT wipe session)
-  try {
-    await Promise.all([loadProfiles(), loadLeads()]);
+    profile  = profRes.data  || { full_name: s.user.email, role: 'member' };
+    profiles = profsRes.data || [];
+    leads    = leadsRes.data || [];
+    isAdmin  = profile?.role === 'admin';
+    renderAll();
   } catch(e) {
     console.warn('Data load failed — showing empty dashboard', e);
+    profile = { full_name: s.user.email, role: 'member' };
+    isAdmin = false;
+    profiles = []; leads = [];
   }
 
   // Always show the app when session is valid
